@@ -1,0 +1,9 @@
+Please update the local ChatGPT Fast portable build.
+
+1. Run this command:
+   powershell -ExecutionPolicy Bypass -File "E:\Users\Administrator\Downloads\ChatGPT-Fast-Update-Tool\refresh-chatgpt-fast.ps1" -ForceClose
+2. Confirm that the Store package was copied, app.asar was extracted, and the patched app.asar was rebuilt.
+3. Confirm that all Speed/Fast patches succeeded.
+4. Confirm that UserData was preserved.
+5. Verify that E:\Users\Administrator\Apps\ChatGPT-Fast\ChatGPT.exe starts successfully.
+6. If a minified JavaScript pattern changed, inspect the new webview\assets files, update the matching rule, and rerun the script while preserving backups.
