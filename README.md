@@ -1,80 +1,84 @@
-# ChatGPT Fast Update Tool
+# ChatGPT Fast Mode Rebuilder
 
-**Microsoft Store 安装包更新、补丁和便携化工具 / Microsoft Store updater, patcher and portable builder**
+**为非官方 API 接入重构本地 ChatGPT/Codex 客户端，使 Fast 模式可以显示并发出 Fast service tier 请求 / Rebuild the local ChatGPT/Codex client so non-official API integrations can expose and request Fast mode**
 
 [中文说明](#中文) · [English](#english)
 
-> 本项目不是 OpenAI 官方产品。它只处理当前 Windows 用户本机已经安装的 `OpenAI.Codex` Microsoft Store 包，不包含账号、Cookie、Token 或其他登录凭据。
-
 ## 中文
 
-### 1. 这是什么
+### 1. 核心目的：为什么要重构 ChatGPT
 
-`ChatGPT-Fast-Update-Tool` 用一个可重复执行的 PowerShell 脚本，把 Microsoft Store 中最新的 `OpenAI.Codex` 安装内容复制到一个独立目录，然后解包和重新打包 `resources\app.asar`，应用 ChatGPT/Codex Fast 模式相关补丁。
+当 ChatGPT/Codex 通过非官方 API、兼容接口、代理网关或自建 API 转发接入时，官方客户端的 Fast 模式通常不可用：
 
-它解决的问题是：Store 更新后，之前生成的 `ChatGPT Fast` 目录不会自动继承新版本文件；重新运行本工具即可从当前 Store 版本重建，而不需要手工解包、修改或打包 ASAR。
+- 前端会根据账号/服务端返回的 `featureRequirements.fast_mode` 隐藏 Fast 选项。
+- 请求前的 service-tier gate 会把 Fast 请求降级或拒绝。
+- 模型目录通常不会给非官方接入显示 `fast`/`priority` tier。
+- 即使手工修改配置，原版客户端也可能仍然只发送 Standard 请求。
 
-### 2. 主要功能
+因此，本项目不是单纯的“更新脚本”，而是**从 Microsoft Store 官方 `OpenAI.Codex` 安装包重建一个本地 ChatGPT Fast 版本**：复制官方客户端、解包 `app.asar`、修改 Fast 相关前端和请求逻辑，再重新打包到独立目录。
 
-- 自动选择已安装的最新 `OpenAI.Codex` Store 版本。
-- 复制官方 `app` 目录到独立的便携目录。
-- 使用 `npx @electron/asar` 解包和重新打包 `app.asar`。
-- 修改 Speed 可见性、Fast service-tier 权限和请求 gate。
-- 尝试补充内置 `Standard / Fast` 选项；新版前端模式变化时会跳过可选补丁而继续使用模型目录。
-- 为修改过的 JS、`config.toml`、模型目录和原始 `app.asar` 保留备份。
-- 保留旧构建中的 `UserData`，避免登录态和本地数据因更新丢失。
-- 创建桌面和开始菜单中的 `ChatGPT Fast` 快捷方式。
-- 可选择更新后自动启动新构建。
+> 这只修改本地客户端行为，不会给非官方 API 服务端凭空增加 Fast 能力。后端网关必须识别并转发 `service_tier`/`priority`；如果后端完全不支持该字段，客户端仍可显示 Fast，但实际速度不会改变。
 
-### 3. 目录结构
+### 2. 具体修改了什么
+
+脚本 `refresh-chatgpt-fast.ps1` 会在每次 Store 更新后重新应用以下修改：
+
+| 文件/区域 | 修改内容 | 作用 |
+|---|---|---|
+| `webview/assets/general-settings*.js` | 强制 Speed 选项可见（将隐藏条件改为永不返回空） | 在 Settings > General > Speed 显示 Fast |
+| `webview/assets/use-service-tier-settings*.js` | 绕过 `featureRequirements.fast_mode` 权限 gate | 不再因为非官方 API 的能力标记隐藏 Fast |
+| `webview/assets/read-service-tier-for-request*.js` | 放开请求前的 Fast service-tier gate | 允许请求继续携带 Fast tier |
+| service-tier 选项 chunk | 尝试固定生成 `Standard / Fast` 选项 | 即使模型目录不完整也能显示选项 |
+| `%USERPROFILE%\.codex\config.toml` | 设置 `service_tier = "fast"` | 让 Codex 默认偏向 Fast 请求 |
+| 模型目录 JSON | 为支持的模型补充 `additional_speed_tiers: ["fast"]` 和 `priority` tier | 让模型目录暴露 Fast/priority 能力 |
+| `resources\app.asar` | 重新打包所有补丁后的 Electron 前端 | 生成可启动的 ChatGPT Fast 客户端 |
+
+每次运行都会先备份原始 ASAR、被修改的 JS/配置和旧构建；原有 `UserData` 会迁移到新构建，避免登录态和本地数据丢失。
+
+### 3. 项目不做什么
+
+- 不修改 OpenAI 服务端，不创建 Fast 账号权限。
+- 不把非官方 API 变成官方 API。
+- 不包含账号、Cookie、Token、API Key 或 `UserData`。
+- 不保证任何第三方网关一定实现 Fast；实际效果取决于网关是否接受并转发 tier 字段。
+
+### 4. 目录结构
 
 ```text
 ChatGPT-Fast-Update-Tool/
-├─ refresh-chatgpt-fast.ps1       # 主更新脚本
+├─ refresh-chatgpt-fast.ps1       # 复制、解包、补丁、重打包和启动
 ├─ run-update.cmd                  # 双击执行的包装器
-├─ CODEX_FAST_UPDATE_GUIDE.md     # 原始中文操作说明
+├─ CODEX_FAST_UPDATE_GUIDE.md     # 中文操作说明
 ├─ PROMPT_FOR_CODEX.txt           # 可直接交给 Codex 的任务提示词
+├─ VERSION                         # 当前版本
 └─ README.md                       # 本文档
 ```
 
-### 4. 环境要求
+### 5. 环境要求
 
 1. Windows 10/11。
-2. Microsoft Store 已安装 `OpenAI.Codex`（脚本通过 `Get-AppxPackage OpenAI.Codex` 查找）。
+2. Microsoft Store 已安装 `OpenAI.Codex`；脚本通过 `Get-AppxPackage OpenAI.Codex` 找到官方安装目录。
 3. PowerShell 5.1 或 PowerShell 7+。
-4. Node.js，并且 `npx.cmd` 位于 `-NodeDir` 指定目录中。`npx` 会在线获取 `@electron/asar`，第一次运行需要网络。
-5. 对目标目录、Store 包和 `%USERPROFILE%\.codex\config.toml` 有读写权限。
+4. Node.js，并且 `npx.cmd` 位于 `-NodeDir` 指定目录中。首次运行会通过 `npx` 获取 `@electron/asar`。
+5. 对输出目录、Store 包和 `%USERPROFILE%\.codex\config.toml` 有读写权限。
 
-### 5. 快速开始
+### 6. 快速开始
 
-在本目录打开 PowerShell：
+在解压后的目录打开 PowerShell：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\refresh-chatgpt-fast.ps1 -ForceClose
 ```
 
-`-ForceClose` 会关闭当前 `ChatGPT Fast` 进程；如果不希望脚本关闭正在运行的程序，请先手工退出并省略该参数。
-
-只生成新目录、不自动启动：
+只重建、不自动启动：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\refresh-chatgpt-fast.ps1 -ForceClose -SkipLaunch
 ```
 
-也可以直接双击 `run-update.cmd`。命令行方式更适合保存日志和排查问题。
-
-### 6. 常用参数
-
-```text
--Destination <path>   输出目录，默认 E:\Users\Administrator\Apps\ChatGPT-Fast
--NodeDir <path>       Node.js 目录，默认 F:\Nodejs
--ForceClose            强制关闭输出目录下仍在运行的进程
--SkipLaunch            完成重建后不启动 ChatGPT.exe
-```
-
-例如，将程序放到 D 盘并使用标准 Node.js 安装目录：
+自定义输出目录和 Node.js：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -84,46 +88,50 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ForceClose
 ```
 
-### 7. 脚本执行流程
+也可以双击 `run-update.cmd`。
 
-1. 查询当前最新的 `OpenAI.Codex` Store 包。
-2. 将官方 `app` 复制到带时间戳的 staging 目录。
-3. 解包 `resources\app.asar` 到 `resources\app`。
-4. 在 `webview\assets` 中定位并修改 Speed/Fast 相关代码。
-5. 如果存在 `%USERPROFILE%\.codex\config.toml`，备份后设置顶层 `service_tier = "fast"`，并按模型目录内容补充 Fast tier。
-6. 将原始 `app.asar` 改名为 `app.asar.fastmode.bak`，重新生成补丁后的 `app.asar`。
-7. 从旧输出目录移动 `UserData` 到新构建，旧构建改名为带时间戳的备份。
-8. 创建快捷方式并按参数启动或跳过启动。
-
-### 8. 备份、回滚和数据位置
-
-脚本不会直接覆盖旧目录：
-
-- 旧构建：`<parent>\ChatGPT-Fast.backup-YYYYMMDD-HHMMSS`。
-- 原始 ASAR：新构建 `resources\app.asar.fastmode.bak`。
-- 被修改文件：同目录的 `.bak-fast-<timestamp>` 文件。
-- 用户数据：`<Destination>\UserData`，更新时会搬移到新构建。
-
-回滚时先退出 `ChatGPT Fast`，再把当前目录改名，将最近的 `.backup-*` 目录恢复为 `ChatGPT-Fast`。如果只需要恢复 ASAR，可在 `resources` 中删除补丁后的 `app.asar` 并将 `app.asar.fastmode.bak` 改回 `app.asar`。
-
-### 9. 验证更新是否成功
-
-脚本成功结束后应看到类似输出：
+### 7. 参数
 
 ```text
-[ok] backed up original app.asar
-[ok] rebuilt patched app.asar
-[ok] preserved UserData
-[ok] launched ChatGPT Fast
+-Destination <path>   输出目录，默认 E:\Users\Administrator\Apps\ChatGPT-Fast
+-NodeDir <path>       Node.js 目录，默认 F:\Nodejs
+-ForceClose            强制关闭输出目录下的旧 ChatGPT Fast 进程
+-SkipLaunch            完成重建后不启动 ChatGPT.exe
 ```
 
-然后在应用中打开 **Settings > General > Speed**，应能看到 `Standard` 和 `Fast`。切换 Fast 后新建任务进行实际验证；旧任务可能保留原来的 service tier。
+### 8. 执行流程
 
-### 10. 常见问题
+1. 选择当前最新的 Store `OpenAI.Codex` 版本。
+2. 将官方 `app` 复制到带时间戳的 staging 目录。
+3. 解包 `resources\app.asar` 到 `resources\app`。
+4. 定位 `general-settings`、`use-service-tier-settings`、`read-service-tier-for-request` 等压缩 JS。
+5. 应用 Speed/Fast 可见性、权限 gate、请求 gate 和模型目录补丁。
+6. 设置 `service_tier = "fast"`，备份原始配置。
+7. 备份原始 ASAR，使用 `@electron/asar` 重新打包。
+8. 迁移旧 `UserData`，备份旧构建，创建桌面/开始菜单快捷方式。
+9. 按参数启动或跳过启动。
+
+### 9. 验证 Fast 是否真的生效
+
+1. 启动 `ChatGPT Fast`。
+2. 打开 **Settings > General > Speed**，确认出现 `Standard` 和 `Fast`。
+3. 选择 Fast，新建一次任务。
+4. 检查实际请求或网关日志，确认 `service_tier`/`priority` 被接收并转发。
+
+只看到 UI 选项并不等于服务端已经提速；非官方 API 网关必须支持对应字段。
+
+### 10. 备份、回滚和数据位置
+
+- 旧构建：`<parent>\ChatGPT-Fast.backup-YYYYMMDD-HHMMSS`。
+- 原始 ASAR：`resources\app.asar.fastmode.bak`。
+- 被修改文件：同目录的 `.bak-fast-<timestamp>`。
+- 用户数据：`<Destination>\UserData`，更新时会搬移到新构建。
+
+回滚前退出 ChatGPT Fast，再将当前目录改名并恢复最近的 `.backup-*` 目录；也可以把 `app.asar.fastmode.bak` 改回 `app.asar`。
+
+### 11. 常见问题
 
 **`OpenAI.Codex Microsoft Store package is not installed`**
-
-确认 Store 应用已经安装，并在 PowerShell 执行：
 
 ```powershell
 Get-AppxPackage OpenAI.Codex | Sort-Object Version -Descending
@@ -131,67 +139,81 @@ Get-AppxPackage OpenAI.Codex | Sort-Object Version -Descending
 
 **`npx was not found`**
 
-将 `-NodeDir` 改为实际包含 `npx.cmd` 的目录：
-
 ```powershell
 Test-Path 'C:\Program Files\nodejs\npx.cmd'
 ```
 
-**`Speed visibility pattern changed` 或其他 pattern changed**
+然后把实际目录传给 `-NodeDir`。
 
-这表示 Store 更新后的压缩 JS 结构发生变化。脚本会在 staging 目录中止，不会替换现有构建。保留 staging 目录和日志，检查对应的 `webview\assets\general-settings*.js`、`use-service-tier-settings*.js` 或 `read-service-tier-for-request*.js`，更新匹配规则后再运行。`Patch-FixedFastOptions` 是可选补丁，找不到新版模式时会明确跳过。
+**`pattern changed`**
 
-**应用启动停在 OpenAI 标志页**
+说明 Store 新版本的压缩 JS 结构发生变化。脚本会停在 staging，不替换现有构建；检查对应的 `webview\assets` 文件，更新匹配规则后再运行。`Patch-FixedFastOptions` 是可选补丁，找不到新版模式时会跳过。
 
-检查 `https://ab.chatgpt.com` 是否能通过当前代理访问。Statsig 初始化超时可能使启动等待变长，但本地默认配置通常仍会继续加载。
+**Fast 显示了但没有提速**
 
-**不想改变 Codex 全局配置**
+检查非官方 API 网关是否识别 `service_tier`、`fast` 或 `priority`，以及是否把字段转发给上游；客户端补丁不能替代服务端实现。
 
-脚本发现 `%USERPROFILE%\.codex\config.toml` 后会先备份并设置 `service_tier = "fast"`。如需保留原配置，请先复制该文件；也可以在脚本运行前暂时移走它，完成后自行恢复。
+**启动停在 OpenAI 标志页**
 
-### 11. 发布包
+检查 `https://ab.chatgpt.com` 是否能通过当前代理访问；Statsig 超时可能使启动等待变长。
 
-Release 页面提供以下压缩包：
+### 12. Release 包
 
 ```text
 ChatGPT-Fast-Update-Tool-v1.0.0.zip
 ```
 
-下载后解压，进入包含 `refresh-chatgpt-fast.ps1` 的目录，再按上面的快速开始命令运行。压缩包不包含 Store 应用本体、Node.js、账号数据或 `UserData`。
+压缩包只包含脚本和文档，不包含 Store 应用本体、Node.js、账号数据或 `UserData`。
 
-### 12. 许可
+### 13. 许可
 
-本仓库使用 MIT License。第三方 `@electron/asar`、Electron 和 Microsoft Store 应用仍受其各自许可证约束。
+MIT License。`@electron/asar`、Electron 和 Microsoft Store 应用仍受各自许可证约束。
 
 ## English
 
-### 1. Overview
+### 1. Why this project exists
 
-`ChatGPT-Fast-Update-Tool` is a repeatable PowerShell builder for the Microsoft Store `OpenAI.Codex` package. It copies the newest Store `app` directory into an isolated destination, extracts and repacks `resources\app.asar`, and applies the local Speed/Fast service-tier patches used by the portable **ChatGPT Fast** build.
+When ChatGPT/Codex is connected through a non-official API, compatibility endpoint, proxy gateway, or self-hosted relay, Fast mode is usually unavailable or ineffective:
 
-The Store application can update without updating an older portable copy. Running this tool rebuilds the portable copy from the current Store version instead of requiring manual ASAR extraction and editing.
+- the frontend hides Fast when `featureRequirements.fast_mode` is not granted;
+- the request-side service-tier gate can reject or downgrade Fast;
+- the model catalog does not expose `fast` or `priority` tiers for the non-official route;
+- changing a config file alone may still leave the original client sending Standard requests.
 
-### 2. Features
+This project therefore **rebuilds a local ChatGPT Fast client from the official Microsoft Store `OpenAI.Codex` package**. It copies the official app, extracts `app.asar`, patches the local frontend/request gates, and repacks an isolated portable build.
 
-- Selects the newest installed `OpenAI.Codex` package.
-- Copies the official application into a separate portable directory.
-- Uses `npx @electron/asar` to extract and rebuild `app.asar`.
-- Patches Speed visibility, Fast service-tier permission, and the request gate.
-- Tries to provide built-in `Standard / Fast` options; an incompatible optional pattern is skipped without failing the build.
-- Creates timestamped backups for JavaScript, `config.toml`, the model catalog, and the original ASAR.
-- Preserves `UserData` across updates.
-- Creates Desktop and Start Menu shortcuts.
-- Can launch the rebuilt application automatically.
+The patch is client-side. It does not add Fast capability to a server. The non-official gateway must accept and forward `service_tier`/`priority`; if the gateway ignores those fields, the UI can show Fast but the backend will not become faster.
 
-### 3. Requirements
+### 2. Exact changes
 
-- Windows 10 or Windows 11.
+| File or area | Change | Result |
+|---|---|---|
+| `webview/assets/general-settings*.js` | Force the Speed options component to remain visible | Fast appears under Settings > General > Speed |
+| `webview/assets/use-service-tier-settings*.js` | Bypass the `featureRequirements.fast_mode` permission gate | Fast is not hidden by non-official capability metadata |
+| `webview/assets/read-service-tier-for-request*.js` | Open the request-side Fast tier gate | Fast tier requests can continue to the API route |
+| service-tier option chunk | Try to provide fixed `Standard / Fast` options | The selector remains usable when the catalog is incomplete |
+| `%USERPROFILE%\.codex\config.toml` | Set `service_tier = "fast"` | Codex defaults to the Fast tier when supported |
+| model catalog JSON | Add `additional_speed_tiers: ["fast"]` and a `priority` tier to eligible models | The client exposes Fast/priority capability |
+| `resources\app.asar` | Repack the patched Electron frontend | Produces the standalone ChatGPT Fast build |
+
+The script backs up the original ASAR and edited files, preserves `UserData`, and keeps the previous portable build for rollback.
+
+### 3. Scope and limitations
+
+- This is a local client rebuild, not a server-side Fast implementation.
+- It does not convert a non-official API into the official API.
+- It ships no account, cookie, token, API key, or `UserData`.
+- Actual acceleration depends on the non-official gateway accepting and forwarding the tier fields.
+
+### 4. Requirements
+
+- Windows 10/11.
 - Microsoft Store package `OpenAI.Codex` installed for the current user.
 - PowerShell 5.1+.
-- Node.js with `npx.cmd` available in the directory passed through `-NodeDir`; the first run downloads `@electron/asar` through `npx`.
-- Read/write access to the destination and to `%USERPROFILE%\.codex\config.toml` when that file exists.
+- Node.js with `npx.cmd` in the directory passed through `-NodeDir`; the first run downloads `@electron/asar`.
+- Read/write access to the destination and `%USERPROFILE%\.codex\config.toml` when present.
 
-### 4. Quick start
+### 5. Quick start
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -205,7 +227,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\refresh-chatgpt-fast.ps1 -ForceClose -SkipLaunch
 ```
 
-For a portable location and a conventional Node.js installation:
+Portable location and Node.js override:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
@@ -215,38 +237,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -ForceClose
 ```
 
-`run-update.cmd` is a double-click wrapper around the same command.
+`run-update.cmd` is a double-click wrapper for the same command.
 
-### 5. Parameters
+### 6. Parameters and flow
 
-| Parameter | Meaning |
-|---|---|
-| `-Destination <path>` | Output directory. Default: `E:\Users\Administrator\Apps\ChatGPT-Fast`. |
-| `-NodeDir <path>` | Directory containing `npx.cmd`. Default: `F:\Nodejs`. |
-| `-ForceClose` | Stop processes launched from the destination before rebuilding. |
-| `-SkipLaunch` | Build the new copy but do not start `ChatGPT.exe`. |
+`-Destination` selects the portable output, `-NodeDir` selects the directory containing `npx.cmd`, `-ForceClose` stops the old portable process, and `-SkipLaunch` avoids starting the rebuilt executable. The script selects the newest Store package, stages it, extracts `app.asar`, applies the Fast patches listed above, updates the local config/model catalog, repacks the ASAR, migrates `UserData`, creates shortcuts, and optionally launches the result.
 
-### 6. Backups and rollback
+### 7. Validation
 
-The existing destination is renamed to `<name>.backup-<timestamp>`, the original ASAR becomes `resources\app.asar.fastmode.bak`, and edited files receive `.bak-fast-<timestamp>` backups. The old `UserData` directory is moved into the new build. Close the application before restoring a backup directory.
+Open **Settings > General > Speed** and confirm `Standard` and `Fast`. Select Fast and create a new task. Then inspect the actual request or gateway log to verify that `service_tier`/`priority` was accepted and forwarded. A visible selector alone does not prove that the backend supports Fast.
 
-### 7. Validation and troubleshooting
+### 8. Backups and troubleshooting
 
-After a successful run, verify the `[ok]` messages, start the application, and check **Settings > General > Speed** for `Standard` and `Fast`. A `pattern changed` error means the Store frontend changed; the script stops before replacing the existing build, so inspect the preserved staging directory and update the matching rule before retrying. The optional fixed-option patch can be skipped when the model catalog already provides the tiers.
+The old build is renamed to `<name>.backup-<timestamp>`, the original ASAR becomes `resources\app.asar.fastmode.bak`, and edited files receive `.bak-fast-<timestamp>` backups. A `pattern changed` error means the Store frontend changed; the script stops before replacing the existing build. If Fast is visible but ineffective, inspect the non-official gateway's tier handling. If `npx` is missing, pass the directory containing `npx.cmd` through `-NodeDir`.
 
-If the application waits at the OpenAI logo, check access to `https://ab.chatgpt.com` through the active proxy. If `npx` cannot be found, pass the directory that contains `npx.cmd` through `-NodeDir`.
+### 9. Release and license
 
-### 8. Release package
-
-The release asset is:
-
-```text
-ChatGPT-Fast-Update-Tool-v1.0.0.zip
-```
-
-The archive contains the scripts and documentation only. It does not contain the Store application, Node.js, account credentials, or `UserData`.
-
-### 9. License
-
-MIT License. `@electron/asar`, Electron, and the Microsoft Store application remain subject to their own licenses.
+The release asset is `ChatGPT-Fast-Update-Tool-v1.0.0.zip`. It contains scripts and documentation only, not the Store app, Node.js, credentials, or `UserData`. The repository is MIT licensed; `@electron/asar`, Electron, and the Microsoft Store app remain subject to their own licenses.
 
