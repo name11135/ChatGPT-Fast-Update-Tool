@@ -1,0 +1,7 @@
+*.bak-fast-*
+*.backup-*
+*.staging-*
+UserData/
+node_modules/
+*.log
+
