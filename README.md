@@ -160,7 +160,7 @@ Test-Path 'C:\Program Files\nodejs\npx.cmd'
 ### 12. Release 包
 
 ```text
-ChatGPT-Fast-Update-Tool-v1.0.0.zip
+ChatGPT-Fast-Update-Tool-v1.0.1.zip
 ```
 
 压缩包只包含脚本和文档，不包含 Store 应用本体、Node.js、账号数据或 `UserData`。
@@ -253,5 +253,4 @@ The old build is renamed to `<name>.backup-<timestamp>`, the original ASAR becom
 
 ### 9. Release and license
 
-The release asset is `ChatGPT-Fast-Update-Tool-v1.0.0.zip`. It contains scripts and documentation only, not the Store app, Node.js, credentials, or `UserData`. The repository is MIT licensed; `@electron/asar`, Electron, and the Microsoft Store app remain subject to their own licenses.
-
+The release asset is `ChatGPT-Fast-Update-Tool-v1.0.1.zip`. It contains scripts and documentation only, not the Store app, Node.js, credentials, or `UserData`. The repository is MIT licensed; `@electron/asar`, Electron, and the Microsoft Store app remain subject to their own licenses.
