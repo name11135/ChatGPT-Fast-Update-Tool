@@ -1,9 +1,19 @@
-Please update the local ChatGPT Fast portable build.
+Please rebuild the local ChatGPT Fast client for a non-official API integration.
 
-1. Run this command:
-   powershell -ExecutionPolicy Bypass -File "E:\Users\Administrator\Downloads\ChatGPT-Fast-Update-Tool\refresh-chatgpt-fast.ps1" -ForceClose
-2. Confirm that the Store package was copied, app.asar was extracted, and the patched app.asar was rebuilt.
-3. Confirm that all Speed/Fast patches succeeded.
-4. Confirm that UserData was preserved.
-5. Verify that E:\Users\Administrator\Apps\ChatGPT-Fast\ChatGPT.exe starts successfully.
-6. If a minified JavaScript pattern changed, inspect the new webview\assets files, update the matching rule, and rerun the script while preserving backups.
+Why: when ChatGPT/Codex uses a non-official API, compatibility endpoint, or proxy gateway, the original client usually hides or downgrades Fast mode. Rebuild the official Microsoft Store OpenAI.Codex app locally so the Fast selector and service-tier request path are available.
+
+Run:
+
+powershell -ExecutionPolicy Bypass -File ".\refresh-chatgpt-fast.ps1" -ForceClose
+
+Confirm that the script:
+
+1. Copies the newest Microsoft Store OpenAI.Codex app.
+2. Extracts and repacks resources\app.asar.
+3. Patches Speed visibility, featureRequirements.fast_mode permission, and the request-side Fast gate.
+4. Adds Fast/priority service tiers to the model catalog when applicable.
+5. Sets service_tier = "fast" in config.toml after creating a backup.
+6. Preserves UserData and the previous portable build.
+7. Starts ChatGPT Fast and verifies Settings > General > Speed contains Standard and Fast.
+
+Finally, inspect the non-official API gateway log. The gateway must accept and forward service_tier/priority; a client-side patch cannot add Fast capability to a backend that ignores those fields.
